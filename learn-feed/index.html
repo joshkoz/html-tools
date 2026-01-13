@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Feed Manager</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"
+    />
+    <style>
+      :root {
+        --bg: #000000;
+        --sidebar: #16181c;
+        --text: #e7e9ea;
+        --primary: #1d9bf0;
+        --border: #2f3336;
+        --danger: #f4212e;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: var(--bg);
+        color: var(--text);
+        margin: 0;
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #sidebar {
+        width: 280px;
+        background: var(--sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        padding: 20px;
+        flex-shrink: 0;
+      }
+      .topic-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 4px 0;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .topic-container:hover {
+        background: #2c2f33;
+      }
+      .topic-container.active {
+        background: var(--primary);
+        font-weight: bold;
+      }
+      .del-btn {
+        background: none;
+        border: none;
+        color: #71767b;
+        font-size: 18px;
+        cursor: pointer;
+      }
+
+      #main {
+        flex: 1;
+        overflow-y: auto;
+        padding: 40px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .content-width {
+        width: 100%;
+        max-width: 600px;
+      }
+
+      button {
+        padding: 12px;
+        border-radius: 999px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+      .primary-btn {
+        background: var(--primary);
+        color: white;
+        width: 100%;
+      }
+      .secondary-btn {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+        width: auto;
+        padding: 10px 20px;
+        align-self: flex-start;
+      }
+      .secondary-btn:hover {
+        color: var(--primary);
+        border-color: var(--primary);
+        background: rgba(29, 155, 240, 0.08);
+      }
+      .secondary-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+        color: #71767b;
+        border-color: #2a2d31;
+      }
+
+      .feed-loader {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        color: #8b8f97;
+        font-size: 0.9rem;
+        padding: 16px 0 32px;
+      }
+      .feed-loader::before {
+        content: "";
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-top-color: var(--primary);
+        animation: spin 0.8s linear infinite;
+      }
+      .feed-loader.active {
+        display: flex;
+      }
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .drawer-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        justify-content: flex-end;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+        z-index: 20;
+      }
+      .drawer-overlay.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .drawer {
+        background: #111214;
+        width: min(520px, 88vw);
+        height: 100%;
+        border-left: 1px solid var(--border);
+        padding: 40px;
+        overflow-y: auto;
+        box-shadow: -20px 0 40px rgba(0, 0, 0, 0.4);
+      }
+      .drawer h3 {
+        margin-top: 0;
+      }
+      .drawer-close {
+        background: transparent;
+        border: none;
+        color: #71767b;
+        font-size: 1.2rem;
+        cursor: pointer;
+        margin-left: auto;
+      }
+      .drawer-meta {
+        color: #9ba1a6;
+        font-size: 0.9rem;
+        margin-bottom: 12px;
+      }
+      .drawer-body {
+        line-height: 1.5;
+        white-space: normal;
+      }
+      .drawer-body h4,
+      .drawer-body h5,
+      .drawer-body h6 {
+        margin: 18px 0 8px;
+        font-size: 1rem;
+      }
+      .drawer-body p,
+      .drawer-body ul,
+      .drawer-body ol,
+      .drawer-body pre {
+        margin: 8px 0;
+      }
+      .drawer-body ul,
+      .drawer-body ol {
+        padding-left: 18px;
+      }
+      .drawer-body pre {
+        border: 1px solid #1f2329;
+        border-radius: 12px;
+        background: #050505;
+        padding: 12px;
+        overflow-x: auto;
+      }
+
+      .settings-trigger {
+        background: transparent;
+        color: #71767b;
+        border: 1px solid #333;
+        margin-top: 10px;
+      }
+      .settings-trigger:hover {
+        background: #1a1a1a;
+      }
+
+      dialog {
+        background: #16181c;
+        color: white;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 30px;
+        width: 400px;
+      }
+      dialog::backdrop {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(4px);
+      }
+      dialog input,
+      dialog select {
+        width: 100%;
+        padding: 12px;
+        margin: 10px 0 5px;
+        border-radius: 8px;
+        background: #000;
+        border: 1px solid var(--border);
+        color: white;
+      }
+
+      .tweet {
+        background: #111214;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 16px 20px;
+        display: flex;
+        gap: 16px;
+        margin-bottom: 18px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+      }
+      .tweet:last-child {
+        margin-bottom: 0;
+      }
+      .tweet__avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(145deg, #1f2933, #0d0f11);
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: var(--primary);
+      }
+      .tweet__content {
+        flex: 1;
+      }
+      .tweet__meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+      .tweet__author {
+        font-weight: 600;
+      }
+      .tweet__handle,
+      .tweet__time {
+        color: #71767b;
+        font-size: 0.9rem;
+      }
+      .tweet__body {
+        line-height: 1.5;
+        margin-bottom: 12px;
+      }
+      .tweet__actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .explain-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--primary);
+        border-radius: 999px;
+        padding: 6px 14px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+      }
+      .explain-btn:hover {
+        border-color: var(--primary);
+        background: rgba(29, 155, 240, 0.1);
+      }
+      .explain-btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .tweet pre {
+        margin-top: 12px;
+      }
+      pre {
+        padding: 15px;
+        border-radius: 12px;
+        overflow-x: auto;
+        border: 1px solid #1f2329;
+        background: #0c0d10;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        max-width: 100%;
+      }
+      .welcome-msg {
+        text-align: center;
+        color: #71767b;
+        margin-top: 50px;
+      }
+    </style>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"
+      defer
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js"
+      defer
+    ></script>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h2 style="margin-top: 0">Feeds</h2>
+      <div id="topicList" style="flex: 1; overflow-y: auto"></div>
+      <button class="primary-btn" onclick="createNewTopic()">+ New Topic</button>
+      <button
+        class="settings-trigger"
+        onclick="document.getElementById('settingsModal').showModal()"
+      >
+        ⚙️ Settings
+      </button>
+    </div>
+
+    <div id="main">
+      <div class="content-width">
+        <h2 id="currentTopicTitle">Select a Topic</h2>
+        <button id="genBtn" class="secondary-btn" onclick="generateNext()" disabled>
+          Reload Feed
+        </button>
+        <div id="feed">
+          <div class="welcome-msg">
+            Create a topic and enter your API key in settings to begin.
+          </div>
+        </div>
+        <div id="feedLoadingIndicator" class="feed-loader">
+          Fetching more posts...
+        </div>
+      </div>
+    </div>
+
+    <dialog id="settingsModal">
+      <h3 style="margin-top: 0">Settings</h3>
+      <label for="apiKey">OpenAI API Key:</label>
+      <input type="password" id="apiKey" placeholder="sk-..." />
+      <label for="modelSelect" style="margin-top: 12px; display: block">OpenAI Model:</label>
+      <select id="modelSelect">
+        <option value="gpt-5.1-codex">gpt-5.1-codex</option>
+        <option value="gpt-5.1">gpt-5.1</option>
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+        <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+        <option value="gpt-4.1">gpt-4.1</option>
+        <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+      </select>
+      <button class="primary-btn" onclick="saveSettings()">Save & Close</button>
+      <button class="secondary-btn" style="margin-top: 12px" onclick="clearApiKey()">
+        Clear Stored Key
+      </button>
+    </dialog>
+
+    <div
+      id="explainDrawer"
+      class="drawer-overlay"
+      onclick="handleDrawerBackdrop(event)"
+    >
+      <div class="drawer" role="dialog" aria-modal="true">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px">
+          <h3 id="drawerTitle" style="margin: 0; flex: 1">Deep Dive</h3>
+          <button class="drawer-close" onclick="closeDrawer()" aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <div id="drawerMeta" class="drawer-meta"></div>
+        <div id="drawerBody" class="drawer-body">
+          Select a post to explain further.
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const STORAGE_KEY = "llm_multi_feeds_v3";
+      const API_KEY_KEY = "openai_api_key_stored";
+      const MODEL_KEY = "openai_model_preference";
+      const INITIAL_BATCH_SIZE = 10;
+      const MODEL_LIMITS = {
+        "gpt-5.1": { maxBatch: 8 },
+        "gpt-5.1-codex": { maxBatch: 8 },
+      };
+      const DEFAULT_MAX_BATCH = 10;
+      const INITIAL_VISIBLE_COUNT = 6;
+      const VISIBLE_INCREMENT = 4;
+      const MAX_CONTEXT_SNIPPETS = 4;
+      const AGGREGATE_TOPIC = "__all__";
+      const AGGREGATE_LABEL = "All Feeds";
+      const SCROLL_TRIGGER_THRESHOLD = 200;
+      const SCROLL_GENERATION_COUNT = 3;
+      const AGGREGATE_JITTER_MS = 60000;
+      const AGGREGATE_FRESH_INTERVAL_MS = 15000;
+
+      let allFeeds = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+      let currentTopic = null;
+      let visibleCounts = {};
+      let isGeneratingFeed = false;
+      let lastAggregateFreshTs = 0;
+      let aggregateFreshTriggered = false;
+      let explanationCache = JSON.parse(localStorage.getItem("explain_cache")) || {};
+
+      const apiInput = document.getElementById("apiKey");
+      const modelSelect = document.getElementById("modelSelect");
+      apiInput.value = localStorage.getItem(API_KEY_KEY) || "";
+      modelSelect.value = localStorage.getItem(MODEL_KEY) || "gpt-5.1-codex";
+
+      const mainEl = document.getElementById("main");
+      mainEl.addEventListener("scroll", handleInfiniteScroll);
+
+      const reloadBtn = document.getElementById("genBtn");
+      const feedLoader = document.getElementById("feedLoadingIndicator");
+      const feedContainer = document.getElementById("feed");
+      const drawerOverlay = document.getElementById("explainDrawer");
+      const drawerTitle = document.getElementById("drawerTitle");
+      const drawerMeta = document.getElementById("drawerMeta");
+      const drawerBody = document.getElementById("drawerBody");
+
+      feedContainer.addEventListener("click", (event) => {
+        const button = event.target.closest(".explain-btn");
+        if (!button) return;
+        const { topic, ts } = button.dataset;
+        if (!topic || !ts) return;
+        openExplanation(topic, Number(ts));
+      });
+
+      function getSelectedModel() {
+        return modelSelect.value || "gpt-5.1-codex";
+      }
+
+      function getModelMaxBatch(model) {
+        return MODEL_LIMITS[model]?.maxBatch || DEFAULT_MAX_BATCH;
+      }
+
+      function saveSettings() {
+        localStorage.setItem(API_KEY_KEY, apiInput.value);
+        localStorage.setItem(MODEL_KEY, getSelectedModel());
+        document.getElementById("settingsModal").close();
+      }
+
+      function clearApiKey() {
+        localStorage.removeItem(API_KEY_KEY);
+        apiInput.value = "";
+      }
+
+      function showFeedLoader(message = "Fetching more posts...") {
+        if (!feedLoader) return;
+        feedLoader.textContent = message;
+        feedLoader.classList.add("active");
+      }
+
+      function hideFeedLoader() {
+        if (!feedLoader) return;
+        feedLoader.classList.remove("active");
+      }
+
+      function isAggregateTopic(topic) {
+        return topic === AGGREGATE_TOPIC;
+      }
+
+      function getTopicNames() {
+        return Object.keys(allFeeds);
+      }
+
+      function jitterScoreForTopic(topic) {
+        if (!topic) return 0;
+        let hash = 0;
+        for (let i = 0; i < topic.length; i += 1) {
+          hash = (hash * 31 + topic.charCodeAt(i)) | 0;
+        }
+        const mod = ((hash % 2000) + 2000) % 2000;
+        return (mod - 1000) * (AGGREGATE_JITTER_MS / 1000);
+      }
+
+      function renderSidebar() {
+        const list = document.getElementById("topicList");
+        const topics = getTopicNames();
+        const aggregateEntry = `
+          <div class="topic-container ${isAggregateTopic(currentTopic) ? "active" : ""}" onclick="switchTopic('${AGGREGATE_TOPIC}')">
+            <span>${AGGREGATE_LABEL}</span>
+          </div>
+        `;
+        const topicEntries = topics
+          .map(
+            (topic) => `
+                <div class="topic-container ${topic === currentTopic ? "active" : ""}" onclick="switchTopic('${topic}')">
+                    <span># ${topic}</span>
+                    <button class="del-btn" onclick="deleteTopic(event, '${topic}')">&times;</button>
+                </div>
+            `,
+          )
+          .join("");
+        list.innerHTML = aggregateEntry + topicEntries;
+      }
+
+      function maybeRefreshAggregateTop({ force = false } = {}) {
+        if (!isAggregateTopic(currentTopic) || isGeneratingFeed) return;
+        const topics = getTopicNames();
+        if (!topics.length) return;
+        const now = Date.now();
+        if (!force && now - lastAggregateFreshTs < AGGREGATE_FRESH_INTERVAL_MS) return;
+        const targetTopic = pickAggregateGenerationTopic();
+        if (!targetTopic) return;
+        if (!localStorage.getItem(API_KEY_KEY)) return;
+        lastAggregateFreshTs = now;
+        aggregateFreshTriggered = true;
+        generateSnippetsForTopic(targetTopic, { count: 1, reason: "fresh" });
+      }
+
+      function ensureInitialTopic() {
+        if (currentTopic) return;
+        switchTopic(AGGREGATE_TOPIC);
+      }
+
+      function switchTopic(topic) {
+        if (!topic) return;
+        currentTopic = topic;
+        if (!visibleCounts[topic]) visibleCounts[topic] = INITIAL_VISIBLE_COUNT;
+        document.getElementById("currentTopicTitle").innerText =
+          isAggregateTopic(topic) ? AGGREGATE_LABEL : topic;
+        reloadBtn.disabled = !canGenerateFromTopic(topic);
+        mainEl.scrollTop = 0;
+        renderSidebar();
+        renderFeed();
+        if (isAggregateTopic(topic)) {
+          const forceFresh = !aggregateFreshTriggered || !getFeedItems(topic).length;
+          maybeRefreshAggregateTop({ force: forceFresh });
+        } else {
+          bootstrapTopicIfNeeded(topic);
+        }
+      }
+
+      function canGenerateFromTopic(topic) {
+        if (!topic) return false;
+        if (isAggregateTopic(topic)) return getTopicNames().length > 0;
+        return true;
+      }
+
+      function createNewTopic() {
+        const name = prompt("Topic name?");
+        if (name && !allFeeds[name]) {
+          allFeeds[name] = [];
+          save();
+          switchTopic(name);
+        }
+      }
+
+      function deleteTopic(e, topic) {
+        e.stopPropagation();
+        if (confirm(`Delete ${topic}?`)) {
+          const wasCurrent = currentTopic === topic;
+          delete allFeeds[topic];
+          if (!getTopicNames().length) {
+            aggregateFreshTriggered = false;
+            lastAggregateFreshTs = 0;
+          }
+          save();
+          if (wasCurrent) {
+            switchTopic(AGGREGATE_TOPIC);
+          } else {
+            renderSidebar();
+            if (isAggregateTopic(currentTopic)) {
+              renderFeed();
+            }
+          }
+        }
+      }
+
+      function renderFeed() {
+        const container = document.getElementById("feed");
+        if (!currentTopic) return;
+        const items = getFeedItems(currentTopic);
+
+        if (items.length === 0) {
+          container.innerHTML = isAggregateTopic(currentTopic)
+            ? '<div class="welcome-msg">Create a topic or reload to populate your aggregated feed.</div>'
+            : '<div class="welcome-msg">Ready to generate.</div>';
+          hideFeedLoader();
+          return;
+        }
+
+        const visibleCount = Math.min(
+          getVisibleCount(currentTopic),
+          items.length,
+        );
+        const visibleItems = items.slice(0, visibleCount);
+        container.innerHTML = visibleItems
+          .map((item) => renderFeedItem(item, item.topic || currentTopic))
+          .join("");
+        requestAnimationFrame(applySyntaxHighlighting);
+        if (!isGeneratingFeed) hideFeedLoader();
+      }
+
+      function getFeedItems(topic) {
+        if (!topic) return [];
+        if (isAggregateTopic(topic)) {
+          const aggregated = [];
+          getTopicNames().forEach((name) => {
+            (allFeeds[name] || []).forEach((item) => {
+              aggregated.push({ ...item, topic: name });
+            });
+          });
+          return aggregated
+            .map((item) => ({
+              ...item,
+              __score: (item.timestamp || 0) + jitterScoreForTopic(item.topic),
+            }))
+            .sort((a, b) => (b.__score || 0) - (a.__score || 0))
+            .map(({ __score, ...rest }) => rest);
+        }
+        return allFeeds[topic] || [];
+      }
+
+      function getVisibleCount(topic) {
+        if (!visibleCounts[topic]) visibleCounts[topic] = INITIAL_VISIBLE_COUNT;
+        return visibleCounts[topic];
+      }
+
+      function handleInfiniteScroll() {
+        if (!currentTopic) return;
+        const nearBottom =
+          mainEl.scrollTop + mainEl.clientHeight >=
+          mainEl.scrollHeight - SCROLL_TRIGGER_THRESHOLD;
+        if (!nearBottom) return;
+        const revealed = loadMoreFeedItems();
+        if (!revealed && !isGeneratingFeed) {
+          triggerScrollGeneration();
+        }
+      }
+
+      function loadMoreFeedItems(topic = currentTopic) {
+        if (!topic) return false;
+        const items = getFeedItems(topic);
+        if (!items.length) return false;
+        const currentVisible = getVisibleCount(topic);
+        if (currentVisible >= items.length) return false;
+        visibleCounts[topic] = Math.min(
+          items.length,
+          currentVisible + VISIBLE_INCREMENT,
+        );
+        renderFeed();
+        return true;
+      }
+
+      function triggerScrollGeneration() {
+        const targetTopic = isAggregateTopic(currentTopic)
+          ? pickAggregateGenerationTopic()
+          : currentTopic;
+        if (!targetTopic) return;
+        generateSnippetsForTopic(targetTopic, {
+          count: SCROLL_GENERATION_COUNT,
+          reason: "scroll",
+        });
+      }
+
+      function pickAggregateGenerationTopic() {
+        const topics = getTopicNames();
+        if (!topics.length) return null;
+        let oldest = null;
+        topics.forEach((topic) => {
+          const ts = getLatestTimestamp(topic);
+          if (!oldest || ts < oldest.ts) {
+            oldest = { topic, ts };
+          }
+        });
+        return oldest ? oldest.topic : null;
+      }
+
+      function getLatestTimestamp(topic) {
+        const items = allFeeds[topic] || [];
+        return items.length ? items[0].timestamp || 0 : 0;
+      }
+
+      function getTailTimestamp(topic) {
+        const items = allFeeds[topic] || [];
+        return items.length ? items[items.length - 1].timestamp || 0 : 0;
+      }
+
+      function renderFeedItem(item, topic) {
+        const displayTopic = topic || currentTopic || "LLM";
+        const initials = displayTopic.slice(0, 2).toUpperCase();
+        const timestampLabel = formatTimestamp(item.timestamp);
+        return `
+          <div class="tweet">
+            <div class="tweet__avatar">${initials}</div>
+            <div class="tweet__content">
+              <div class="tweet__meta">
+                <div>
+                  <span class="tweet__author">${displayTopic}</span>
+                  <span class="tweet__handle">@llmfeed</span>
+                </div>
+                <span class="tweet__time">${timestampLabel}</span>
+              </div>
+              <div class="tweet__body">${item.content}</div>
+              <div class="tweet__actions">
+                <button
+                  class="explain-btn"
+                  type="button"
+                  data-topic="${topic}"
+                  data-ts="${item.timestamp}"
+                >
+                  Explain further
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function formatTimestamp(ts) {
+        if (!ts) return "just now";
+        const diff = Date.now() - ts;
+        const seconds = Math.max(0, Math.floor(diff / 1000));
+        if (seconds < 60) return seconds <= 5 ? "just now" : `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days}d ago`;
+        return new Date(ts).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function applySyntaxHighlighting() {
+        if (!window.hljs) return;
+        document.querySelectorAll("#feed pre, .drawer-body pre").forEach((block) => {
+          block.classList.add("language-csharp");
+          hljs.highlightElement(block);
+        });
+      }
+
+      function buildUserPrompt(topic) {
+        const previous = (allFeeds[topic] || [])
+          .slice(0, MAX_CONTEXT_SNIPPETS)
+          .map((item, index) => {
+            const text = item.content.replace(/\s+/g, " ").trim();
+            return `${index + 1}. ${text.slice(0, 320)}`;
+          })
+          .join("\n");
+        return [
+          `Topic: ${topic}`,
+          "Deliver a fresh, matter-of-fact angle that differs from the previous snippets below. Avoid fluffy phrasing, rhetorical questions, or repeated openings, and feel free to explore any relevant subdomain (networking, languages, ops, data, etc.).",
+          previous ? `Previous snippets to avoid repeating:\n${previous}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+      }
+
+      async function requestSnippetBatch({ topic, count, model, reason }) {
+        const key = localStorage.getItem(API_KEY_KEY);
+        if (!key) throw new Error("Missing API key");
+        const userPrompt = buildUserPrompt(topic);
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model,
+            n: count,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a technical mentor crafting concise, matter-of-fact social feed posts. Each response should deliver a single concrete technical insight tied to the topic with no fluff, no rhetorical questions, and no repeated openings like 'Did you know'. Rotate across relevant subtopics (architecture, networking, data, tooling, etc.) so each entry feels fresh. Use a code snippet inside <pre> tags only when it clarifies the point, and vary the language you choose. Mention performance characteristics or trade-offs when meaningful. Absolutely no hashtags, emojis, or markdown fences.",
+              },
+              { role: "user", content: userPrompt },
+            ],
+          }),
+        });
+        const data = await response.json();
+        if (!data.choices || data.choices.length === 0)
+          throw new Error("No snippets returned");
+
+        const isScrollBatch = reason === "scroll";
+        const existing = allFeeds[topic] || [];
+        const baseTimestamp = isScrollBatch
+          ? (getTailTimestamp(topic) || Date.now()) - 1
+          : Date.now();
+        const newEntries = data.choices.map((choice, index) => ({
+          content: choice.message.content,
+          timestamp: isScrollBatch ? baseTimestamp - index : baseTimestamp + index,
+        }));
+        allFeeds[topic] = isScrollBatch
+          ? existing.concat(newEntries)
+          : newEntries.concat(existing);
+
+        bumpVisibleCountsAfterGeneration(topic, newEntries.length);
+        save();
+        renderFeed();
+      }
+
+      async function fetchExplanation(topic, entry) {
+        const key = localStorage.getItem(API_KEY_KEY);
+        if (!key) {
+          drawerMeta.textContent = "Add an API key in settings to get more detail.";
+          drawerBody.textContent =
+            "Once a key is saved, you can request deeper explanations here.";
+          return;
+        }
+        drawerMeta.textContent = `Posted ${formatTimestamp(
+          entry.timestamp,
+        )} • Generating detailed explanation...`;
+
+        const cacheKey = buildExplanationKey(topic, entry.timestamp);
+
+        const explanationPrompt = [
+          `Topic: ${topic}`,
+          "Original snippet to expand:",
+          entry.content,
+          "Task: Provide a thorough explanation that includes the underlying algorithmic intuition, real-world applications, trade-offs, and a brief step-by-step walkthrough of the code above. Keep it concise but more detailed than the original snippet.",
+        ].join("\n\n");
+
+        try {
+          const response = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${key}`,
+              },
+              body: JSON.stringify({
+                model: getSelectedModel(),
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "You expand technical social posts into clear explanations. Avoid hashtags/emojis, may include short <pre> snippets. Respond in HTML without markdown fences.",
+                  },
+                  { role: "user", content: explanationPrompt },
+                ],
+              }),
+            },
+          );
+          const data = await response.json();
+          if (!data.choices || !data.choices.length)
+            throw new Error("No explanation returned");
+          const explanation = data.choices[0].message.content;
+          const metaText = `Posted ${formatTimestamp(entry.timestamp)} • Expanded overview`;
+          drawerMeta.textContent = metaText;
+          drawerBody.innerHTML = explanation;
+          explanationCache[cacheKey] = {
+            meta: metaText,
+            body: explanation,
+          };
+          localStorage.setItem("explain_cache", JSON.stringify(explanationCache));
+          requestAnimationFrame(applySyntaxHighlighting);
+        } catch (err) {
+          drawerMeta.textContent = "Failed to load explanation";
+          drawerBody.textContent = err.message || "Unknown error";
+        }
+      }
+
+      function buildExplanationKey(topic, timestamp) {
+        return `${topic}::${timestamp}`;
+      }
+
+      function openExplanation(topic, timestamp) {
+        const source = allFeeds[topic] || [];
+        const entry = source.find((item) => item.timestamp === timestamp);
+        const cacheKey = buildExplanationKey(topic, timestamp);
+        drawerOverlay.classList.add("active");
+        if (!entry) {
+          drawerTitle.textContent = `${topic} deep dive`;
+          drawerMeta.textContent = "Unable to locate that post.";
+          drawerBody.textContent = "Try generating the snippet again.";
+          return;
+        }
+
+        drawerTitle.textContent = `${topic} deep dive`;
+        const cached = explanationCache[cacheKey];
+        if (cached) {
+          drawerMeta.textContent = cached.meta;
+          drawerBody.innerHTML = cached.body;
+          requestAnimationFrame(applySyntaxHighlighting);
+          return;
+        }
+
+        drawerMeta.textContent = `Posted ${formatTimestamp(
+          entry.timestamp,
+        )} • Detailed breakdown pending...`;
+        drawerBody.innerHTML =
+          '<div class="drawer-body">Analyzing this snippet for more detail...</div>';
+        fetchExplanation(topic, entry);
+      }
+
+      function closeDrawer() {
+        drawerOverlay.classList.remove("active");
+      }
+
+      function handleDrawerBackdrop(event) {
+        if (event.target === drawerOverlay) {
+          closeDrawer();
+        }
+      }
+
+      async function generateSnippetsForTopic(
+        topic,
+        { count = 1, reason = "reload" } = {},
+      ) {
+        if (!topic || isGeneratingFeed) return;
+        const key = localStorage.getItem(API_KEY_KEY);
+        if (!key) {
+          document.getElementById("settingsModal").showModal();
+          document.getElementById("feed").innerHTML =
+            '<div class="welcome-msg">Add an API key to load this feed.</div>';
+          hideFeedLoader();
+          return;
+        }
+
+        const model = getSelectedModel();
+        const maxBatch = getModelMaxBatch(model);
+        const batchSizes = [];
+        let remaining = count;
+        while (remaining > 0) {
+          batchSizes.push(Math.min(remaining, maxBatch));
+          remaining -= maxBatch;
+        }
+
+        const toggleButton = reason === "reload";
+        const shouldShowLoader = reason === "scroll" || reason === "bootstrap";
+        if (toggleButton) {
+          reloadBtn.disabled = true;
+          reloadBtn.innerText = "Refreshing...";
+        } else if (shouldShowLoader) {
+          const message =
+            reason === "bootstrap"
+              ? "Bootstrapping feed..."
+              : "Fetching more posts...";
+          showFeedLoader(message);
+        }
+
+        isGeneratingFeed = true;
+
+        try {
+          for (const size of batchSizes) {
+            await requestSnippetBatch({ topic, count: size, model, reason });
+          }
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          if (toggleButton) {
+            reloadBtn.disabled = false;
+            reloadBtn.innerText = "Reload Feed";
+            reloadBtn.disabled = !canGenerateFromTopic(currentTopic);
+          } else if (shouldShowLoader) {
+            hideFeedLoader();
+          }
+          isGeneratingFeed = false;
+        }
+      }
+
+      function bumpVisibleCountsAfterGeneration(topic, added) {
+        if (!added) return;
+        if (!visibleCounts[topic]) visibleCounts[topic] = INITIAL_VISIBLE_COUNT;
+        const topicItems = getFeedItems(topic).length;
+        visibleCounts[topic] = Math.min(
+          topicItems,
+          (visibleCounts[topic] || INITIAL_VISIBLE_COUNT) + added,
+        );
+        if (visibleCounts[AGGREGATE_TOPIC]) {
+          const aggregateLength = getFeedItems(AGGREGATE_TOPIC).length;
+          visibleCounts[AGGREGATE_TOPIC] = Math.min(
+            aggregateLength,
+            visibleCounts[AGGREGATE_TOPIC] + added,
+          );
+        }
+      }
+
+      function generateNext() {
+        const targetTopic = isAggregateTopic(currentTopic)
+          ? pickAggregateGenerationTopic()
+          : currentTopic;
+        if (!targetTopic) return;
+        generateSnippetsForTopic(targetTopic, { count: 1, reason: "reload" });
+      }
+
+      function bootstrapTopicIfNeeded(topic) {
+        if (!topic || isAggregateTopic(topic)) return;
+        if ((allFeeds[topic] || []).length > 0) return;
+        if (currentTopic === topic) {
+          document.getElementById("feed").innerHTML =
+            '<div class="welcome-msg">Generating feed...</div>';
+        }
+        generateSnippetsForTopic(topic, {
+          count: INITIAL_BATCH_SIZE,
+          reason: "bootstrap",
+        });
+      }
+
+      function save() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allFeeds));
+      }
+
+      renderSidebar();
+      ensureInitialTopic();
+    </script>
+  </body>
+</html>
